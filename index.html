@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>لوحة إدارة محل الصرافة</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero">
+      <div class="hero__content">
+        <h1>لوحة إدارة عمليات محل الصرافة خاص لاحمد بكور</h1>
+        </p>
+      </div>
+      <div class="hero__badge">
+        <span>الحالة</span>
+        <strong id="connectionBadge">جاري الاتصال...</strong>
+      </div>
+    </header>
+
+    <main class="dashboard">
+      <section class="panel">
+        <div class="panel__head">
+          <div>
+            <h2>ملخص الأرصدة والإحصائيات</h2>
+          </div>
+        </div>
+        <div class="stats-grid" id="statsGrid"></div>
+      </section>
+
+      <section class="panel panel--split">
+        <div>
+          <div class="panel__head">
+            <div>
+              <h2>أسعار الصرف</h2>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="field">
+              <label for="usdTry">USD → TRY</label>
+              <input id="usdTry" type="number" inputmode="decimal" step="any" min="0" placeholder="مثال: 32.5">
+            </div>
+            <div class="field">
+              <label for="usdSypNew">USD → SYP_NEW</label>
+              <input id="usdSypNew" type="number" inputmode="decimal" step="any" min="0" placeholder="مثال: 14500">
+            </div>
+            <div class="field">
+              <label for="usdSypOld">USD → SYP_OLD</label>
+              <input id="usdSypOld" type="number" inputmode="decimal" step="any" min="0" placeholder="مثال: 15000">
+            </div>
+          </div>
+
+          <div class="button-row">
+            <button class="btn btn--primary" id="saveRatesBtn">تحديث الأسعار</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="panel__head">
+            <div>
+              <h2>إضافة عملية جديدة</h2>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="field">
+              <label for="operationType">نوع العملية</label>
+              <select id="operationType">
+                <option value="صرف">صرف</option>
+                <option value="شراء">شراء</option>
+                <option value="بيع">بيع</option>
+                <option value="تبديل قديم بجديد">تبديل قديم بجديد</option>
+                <option value="تبديل جديد بقديم">تبديل جديد بقديم</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="currencyIn">العملة الداخلة</label>
+              <select id="currencyIn"></select>
+            </div>
+            <div class="field">
+              <label for="amountIn">المبلغ الداخل</label>
+              <input id="amountIn" type="number" inputmode="decimal" step="any" min="0" placeholder="0">
+            </div>
+            <div class="field">
+              <label for="currencyOut">العملة الخارجة</label>
+              <select id="currencyOut"></select>
+            </div>
+            <div class="field">
+              <label for="amountOut">المبلغ الخارج</label>
+              <input id="amountOut" type="number" inputmode="decimal" step="any" min="0" placeholder="0">
+            </div>
+            <div class="field">
+              <label for="rate">سعر الصرف</label>
+              <input id="rate" type="number" inputmode="decimal" step="any" min="0" placeholder="اختياري">
+            </div>
+            <div class="field field--full">
+              <label for="notes">الملاحظات</label>
+              <textarea id="notes" placeholder="تفاصيل إضافية عن العملية"></textarea>
+            </div>
+          </div>
+
+          <div class="button-row">
+            <button class="btn btn--success" id="saveOperationBtn">حفظ العملية</button>
+            <button class="btn btn--ghost" id="previewBtn">معاينة المعلومات</button>
+            <button class="btn btn--primary" id="refreshBtn">تحديث البيانات</button>
+            <button class="btn btn--dark" id="exportBtn">تصدير CSV</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel__head">
+          <div>
+            <h2>جدول العمليات</h2>
+          </div>
+          <div class="meta" id="lastSync">آخر تحديث: -</div>
+        </div>
+
+        <div class="status-bar" id="statusMessage"></div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>التاريخ</th>
+                <th>نوع العملية</th>
+                <th>العملة الداخلة</th>
+                <th>المبلغ الداخل</th>
+                <th>العملة الخارجة</th>
+                <th>المبلغ الخارج</th>
+                <th>سعر الصرف</th>
+                <th>الملاحظات</th>
+              </tr>
+            </thead>
+            <tbody id="operationsTableBody">
+              <tr>
+                <td colspan="8" class="empty-state">جاري تحميل البيانات...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="app.js"></script>
+</body>
+</html>
