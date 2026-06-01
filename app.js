@@ -25,7 +25,8 @@ create table if not exists transactions (
 const SUPABASE_URL = "https://wpekmzymjwcngzfuwimm.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndwZWttenltandjbmd6ZnV3aW1tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMzMwMTIsImV4cCI6MjA5NTkwOTAxMn0.ejSXDYCLL_nvK1iuzdvbmJu-K0HMvD_wX3fnIrXlJN0";
 
-const CURRENCIES = ["USD", "TRY", "SYP_NEW", "SYP_OLD"];
+const CURRENCIES = ["USD", "TRY", "SYP_NEW", "SYP_OLD", "USDT", "SHAM_CASH"];
+const COST_TRACKED_CURRENCIES = ["TRY", "SYP_NEW", "SYP_OLD"];
 const RATE_CURRENCY_MAP = {
   usdTry: "TRY",
   usdSypNew: "SYP_NEW",
@@ -37,13 +38,21 @@ const statsConfig = [
   { key: "balanceTRY", label: "الموجود تركي", className: "primary" },
   { key: "balanceSypNew", label: "الموجود سوري جديد", className: "primary" },
   { key: "balanceSypOld", label: "الموجود سوري قديم", className: "primary" },
-  { key: "totalIn", label: "إجمالي الوارد", className: "success" },
-  { key: "totalOut", label: "إجمالي الصادر", className: "danger" },
+  { key: "boxUSDT", label: "صندوق USDT", className: "primary" },
+  { key: "boxShamCash", label: "صندوق شام كاش", className: "primary" },
+  { key: "avgCostTRY", label: "سعر تكلفة التركي", className: "success" },
+  { key: "avgCostSypNew", label: "سعر تكلفة السوري الجديد", className: "success" },
+  { key: "avgCostSypOld", label: "سعر تكلفة السوري القديم", className: "success" },
+  { key: "avgCostUSD", label: "سعر تكلفة الدولار", className: "success" },
+  { key: "profitTodayUSD", label: "ربح اليوم بالدولار", className: "success" },
+  { key: "profitTodayTRY", label: "ربح اليوم بالتركي", className: "success" },
+  { key: "profitTodaySYP", label: "ربح اليوم بالسوري", className: "success" },
+  { key: "totalProfitUSD", label: "إجمالي الربح", className: "success" },
+  { key: "totalLossUSD", label: "إجمالي الخسارة", className: "danger" },
+  { key: "netProfitUSD", label: "صافي الربح", className: "primary" },
   { key: "netUSD", label: "صافي بالدولار", className: "success", estimated: true },
   { key: "netTRY", label: "صافي بالتركي", className: "success", estimated: true },
-  { key: "netSYP", label: "صافي بالسوري", className: "success", estimated: true },
-  { key: "netTryCostUsd", label: "صافي كلفة التركي بالدولار", className: "primary", estimated: true },
-  { key: "netSypCostUsd", label: "صافي كلفة السوري بالدولار", className: "primary", estimated: true }
+  { key: "netSYP", label: "صافي بالسوري", className: "success", estimated: true }
 ];
 
 const supabaseReady =
@@ -66,6 +75,7 @@ const el = {
   saveRatesBtn: document.getElementById("saveRatesBtn"),
   walletCurrency: document.getElementById("walletCurrency"),
   walletAmount: document.getElementById("walletAmount"),
+  walletRate: document.getElementById("walletRate"),
   walletNotes: document.getElementById("walletNotes"),
   saveWalletBalanceBtn: document.getElementById("saveWalletBalanceBtn"),
   operationType: document.getElementById("operationType"),
@@ -85,6 +95,7 @@ const el = {
 
 const state = {
   operations: [],
+  analyzedOperations: [],
   rates: {
     usdTry: 0,
     usdSypNew: 0,
@@ -216,7 +227,7 @@ function getWalletBalanceOperationFromForm() {
     amount_in: toPositiveNumber(el.walletAmount.value),
     currency_out: el.walletCurrency.value,
     amount_out: 0,
-    rate: 0
+    rate: toPositiveNumber(el.walletRate.value)
   };
 
   if (state.hasNotesColumn) {
@@ -239,6 +250,7 @@ function clearOperationForm() {
 function clearWalletForm() {
   el.walletCurrency.value = "USD";
   el.walletAmount.value = "";
+  el.walletRate.value = "";
   el.walletNotes.value = "";
 }
 
@@ -254,20 +266,103 @@ function resetEditMode() {
   updateFormMode();
 }
 
-function computeSummary() {
+function getLocalDateKey(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return year + "-" + month + "-" + day;
+}
+
+function analyzeOperations() {
   const balances = {
     USD: 0,
     TRY: 0,
     SYP_NEW: 0,
-    SYP_OLD: 0
+    SYP_OLD: 0,
+    USDT: 0,
+    SHAM_CASH: 0
   };
 
-  let totalIn = 0;
-  let totalOut = 0;
+  const inventory = {
+    TRY: { quantity: 0, avgCost: 0 },
+    SYP_NEW: { quantity: 0, avgCost: 0 },
+    SYP_OLD: { quantity: 0, avgCost: 0 }
+  };
 
-  state.operations.forEach(function (operation) {
+  let totalProfitUSD = 0;
+  let totalLossUSD = 0;
+  let profitTodayUSD = 0;
+  const todayKey = getLocalDateKey(new Date());
+
+  const sortedOperations = state.operations.slice().sort(function (a, b) {
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  });
+
+  const analyzedById = {};
+
+  sortedOperations.forEach(function (operation) {
     const amountIn = toNumber(operation.amount_in);
     const amountOut = toNumber(operation.amount_out);
+    const rate = toPositiveNumber(operation.rate);
+    let costRate = null;
+    let costUsd = null;
+    let profitUsd = null;
+
+    const isBuyAgainstUSD =
+      COST_TRACKED_CURRENCIES.indexOf(operation.currency_in) !== -1 &&
+      operation.currency_out === "USD" &&
+      amountIn > 0 &&
+      amountOut > 0;
+
+    const isSellAgainstUSD =
+      operation.currency_in === "USD" &&
+      COST_TRACKED_CURRENCIES.indexOf(operation.currency_out) !== -1 &&
+      amountIn > 0 &&
+      amountOut > 0;
+
+    const isWalletTopUpWithCost =
+      operation.type === "إضافة رصيد للمحفظة" &&
+      COST_TRACKED_CURRENCIES.indexOf(operation.currency_in) !== -1 &&
+      amountIn > 0 &&
+      rate > 0;
+
+    if (isBuyAgainstUSD || isWalletTopUpWithCost) {
+      const trackedCurrency = operation.currency_in;
+      const previousQuantity = inventory[trackedCurrency].quantity;
+      const previousAvgCost = inventory[trackedCurrency].avgCost;
+      const previousCostUsd = previousAvgCost > 0 ? previousQuantity / previousAvgCost : 0;
+      const addedCostUsd = isBuyAgainstUSD ? amountOut : amountIn / rate;
+      const effectiveBuyRate = isBuyAgainstUSD ? amountIn / amountOut : rate;
+      const newQuantity = previousQuantity + amountIn;
+      const newAvgCost = newQuantity > 0
+        ? newQuantity / (previousCostUsd + addedCostUsd)
+        : 0;
+
+      inventory[trackedCurrency].quantity = newQuantity;
+      inventory[trackedCurrency].avgCost = newAvgCost;
+      costRate = effectiveBuyRate;
+      costUsd = addedCostUsd;
+    }
+
+    if (isSellAgainstUSD) {
+      const trackedCurrency = operation.currency_out;
+      const previousQuantity = inventory[trackedCurrency].quantity;
+      const previousAvgCost = inventory[trackedCurrency].avgCost;
+
+      costRate = previousAvgCost || null;
+      costUsd = previousAvgCost > 0 ? amountOut / previousAvgCost : null;
+      profitUsd = costUsd == null ? null : amountIn - costUsd;
+
+      inventory[trackedCurrency].quantity = Math.max(0, previousQuantity - amountOut);
+      if (inventory[trackedCurrency].quantity === 0) {
+        inventory[trackedCurrency].avgCost = 0;
+      }
+    }
 
     if (balances[operation.currency_in] != null) {
       balances[operation.currency_in] += amountIn;
@@ -277,15 +372,30 @@ function computeSummary() {
       balances[operation.currency_out] -= amountOut;
     }
 
-    totalIn += amountIn;
-    totalOut += amountOut;
+    if (typeof profitUsd === "number") {
+      if (profitUsd >= 0) {
+        totalProfitUSD += profitUsd;
+      } else {
+        totalLossUSD += Math.abs(profitUsd);
+      }
+
+      if (getLocalDateKey(operation.created_at) === todayKey) {
+        profitTodayUSD += profitUsd;
+      }
+    }
+
+    analyzedById[operation.id] = Object.assign({}, operation, {
+      cost_rate: costRate,
+      cost_usd: costUsd,
+      profit_usd: profitUsd,
+      profit_try: typeof profitUsd === "number" ? profitUsd * toNumber(state.rates.usdTry) : null,
+      profit_syp: typeof profitUsd === "number" ? profitUsd * toNumber(state.rates.usdSypNew) : null
+    });
   });
 
   let netUSD = null;
   let netTRY = null;
   let netSYP = null;
-  let netTryCostUsd = null;
-  let netSypCostUsd = null;
 
   if (state.enableEstimatedStats) {
     const usdTry = state.rates.usdTry;
@@ -299,30 +409,40 @@ function computeSummary() {
     netUSD = balances.USD + tryCostUsd + sypNewCostUsd + sypOldCostUsd;
     netTRY = netUSD * usdTry;
     netSYP = netUSD * usdSypNew;
-    netTryCostUsd = tryCostUsd;
-    netSypCostUsd = sypNewCostUsd + sypOldCostUsd;
   }
 
   return {
+    analyzedOperations: state.operations.map(function (operation) {
+      return analyzedById[operation.id] || operation;
+    }),
     balanceUSD: balances.USD,
     balanceTRY: balances.TRY,
     balanceSypNew: balances.SYP_NEW,
     balanceSypOld: balances.SYP_OLD,
-    totalIn: totalIn,
-    totalOut: totalOut,
+    boxUSDT: balances.USDT,
+    boxShamCash: balances.SHAM_CASH,
+    avgCostTRY: inventory.TRY.avgCost || null,
+    avgCostSypNew: inventory.SYP_NEW.avgCost || null,
+    avgCostSypOld: inventory.SYP_OLD.avgCost || null,
+    avgCostUSD: 1,
+    profitTodayUSD: profitTodayUSD,
+    profitTodayTRY: profitTodayUSD * toNumber(state.rates.usdTry),
+    profitTodaySYP: profitTodayUSD * toNumber(state.rates.usdSypNew),
+    totalProfitUSD: totalProfitUSD,
+    totalLossUSD: totalLossUSD,
+    netProfitUSD: totalProfitUSD - totalLossUSD,
     netUSD: netUSD,
     netTRY: netTRY,
-    netSYP: netSYP,
-    netTryCostUsd: netTryCostUsd,
-    netSypCostUsd: netSypCostUsd
+    netSYP: netSYP
   };
 }
 
 function renderStats() {
-  const summary = computeSummary();
+  const summary = analyzeOperations();
+  state.analyzedOperations = summary.analyzedOperations;
   el.statsGrid.innerHTML = statsConfig.map(function (item) {
     const value = summary[item.key];
-    const displayValue = item.estimated && !state.enableEstimatedStats
+    const displayValue = (item.estimated && !state.enableEstimatedStats) || value == null
       ? "—"
       : formatNumber(value);
 
@@ -336,13 +456,15 @@ function renderStats() {
 }
 
 function renderOperationsTable() {
-  if (!state.operations.length) {
+  const rows = state.analyzedOperations.length ? state.analyzedOperations : state.operations;
+
+  if (!rows.length) {
     el.operationsTableBody.innerHTML =
-      '<tr><td colspan="9" class="empty-state">لا توجد عمليات محفوظة في قاعدة البيانات حتى الآن.</td></tr>';
+      '<tr><td colspan="14" class="empty-state">لا توجد عمليات محفوظة في قاعدة البيانات حتى الآن.</td></tr>';
     return;
   }
 
-  el.operationsTableBody.innerHTML = state.operations.map(function (operation) {
+  el.operationsTableBody.innerHTML = rows.map(function (operation) {
     return [
       "<tr>",
       '<td data-label="التاريخ">' + escapeHtml(formatDate(operation.created_at)) + "</td>",
@@ -352,6 +474,11 @@ function renderOperationsTable() {
       '<td data-label="العملة الخارجة">' + escapeHtml(operation.currency_out) + "</td>",
       '<td data-label="المبلغ الخارج">' + escapeHtml(formatNumber(operation.amount_out)) + "</td>",
       '<td data-label="سعر الصرف">' + escapeHtml(formatNumber(operation.rate)) + "</td>",
+      '<td data-label="سعر التكلفة">' + escapeHtml(operation.cost_rate == null ? "-" : formatNumber(operation.cost_rate)) + "</td>",
+      '<td data-label="الكلفة بالدولار">' + escapeHtml(operation.cost_usd == null ? "-" : formatNumber(operation.cost_usd)) + "</td>",
+      '<td data-label="الربح/الخسارة USD">' + escapeHtml(operation.profit_usd == null ? "-" : formatNumber(operation.profit_usd)) + "</td>",
+      '<td data-label="الربح/الخسارة TRY">' + escapeHtml(operation.profit_try == null ? "-" : formatNumber(operation.profit_try)) + "</td>",
+      '<td data-label="الربح/الخسارة SYP">' + escapeHtml(operation.profit_syp == null ? "-" : formatNumber(operation.profit_syp)) + "</td>",
       '<td data-label="الملاحظات">' + escapeHtml(operation.notes || "-") + "</td>",
       '<td data-label="الإجراءات"><div class="table-actions">' +
         '<button type="button" class="table-btn table-btn--edit" data-action="edit" data-id="' + escapeHtml(operation.id) + '">تعديل</button>' +
@@ -594,6 +721,14 @@ async function saveWalletBalance() {
     return;
   }
 
+  if (
+    COST_TRACKED_CURRENCIES.indexOf(operation.currency_in) !== -1 &&
+    toPositiveNumber(operation.rate) <= 0
+  ) {
+    showStatus("عند إضافة رصيد تركي أو سوري للمحفظة يجب إدخال سعر تكلفة الرصيد حتى يُحسب المتوسط بشكل صحيح.", true);
+    return;
+  }
+
   setButtonsDisabled(true);
 
   try {
@@ -712,7 +847,9 @@ function handleTableActions(event) {
 }
 
 function exportCsv() {
-  if (!state.operations.length) {
+  const rowsSource = state.analyzedOperations.length ? state.analyzedOperations : state.operations;
+
+  if (!rowsSource.length) {
     showStatus("لا توجد عمليات لتصديرها.", true);
     return;
   }
@@ -725,10 +862,15 @@ function exportCsv() {
     "العملة الخارجة",
     "المبلغ الخارج",
     "سعر الصرف",
+    "سعر التكلفة",
+    "الكلفة بالدولار",
+    "الربح/الخسارة USD",
+    "الربح/الخسارة TRY",
+    "الربح/الخسارة SYP",
     "الملاحظات"
   ];
 
-  const rows = state.operations.map(function (operation) {
+  const rows = rowsSource.map(function (operation) {
     return [
       formatDate(operation.created_at),
       operation.type,
@@ -737,6 +879,11 @@ function exportCsv() {
       operation.currency_out,
       operation.amount_out,
       operation.rate,
+      operation.cost_rate == null ? "" : operation.cost_rate,
+      operation.cost_usd == null ? "" : operation.cost_usd,
+      operation.profit_usd == null ? "" : operation.profit_usd,
+      operation.profit_try == null ? "" : operation.profit_try,
+      operation.profit_syp == null ? "" : operation.profit_syp,
       operation.notes || ""
     ];
   });

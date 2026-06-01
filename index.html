@@ -131,6 +131,10 @@
             <label for="walletAmount">المبلغ المضاف</label>
             <input id="walletAmount" type="number" inputmode="decimal" step="any" min="0" placeholder="0">
           </div>
+          <div class="field">
+            <label for="walletRate">سعر تكلفة الرصيد</label>
+            <input id="walletRate" type="number" inputmode="decimal" step="any" min="0" placeholder="اختياري للتركي والسوري">
+          </div>
           <div class="field field--full">
             <label for="walletNotes">ملاحظات الرصيد</label>
             <textarea id="walletNotes" placeholder="مثال: رصيد افتتاحي أو إضافة كاش للمحفظة"></textarea>
@@ -163,13 +167,18 @@
                 <th>العملة الخارجة</th>
                 <th>المبلغ الخارج</th>
                 <th>سعر الصرف</th>
+                <th>سعر التكلفة</th>
+                <th>الكلفة بالدولار</th>
+                <th>الربح/الخسارة USD</th>
+                <th>الربح/الخسارة TRY</th>
+                <th>الربح/الخسارة SYP</th>
                 <th>الملاحظات</th>
                 <th>الإجراءات</th>
               </tr>
             </thead>
             <tbody id="operationsTableBody">
               <tr>
-                <td colspan="9" class="empty-state">جاري تحميل البيانات...</td>
+                <td colspan="14" class="empty-state">جاري تحميل البيانات...</td>
               </tr>
             </tbody>
           </table>
