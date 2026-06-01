@@ -208,6 +208,10 @@ button {
   gap: 14px;
 }
 
+.wallet-grid {
+  align-items: start;
+}
+
 .field {
   display: flex;
   flex-direction: column;

@@ -64,6 +64,10 @@ const el = {
   usdSypNew: document.getElementById("usdSypNew"),
   usdSypOld: document.getElementById("usdSypOld"),
   saveRatesBtn: document.getElementById("saveRatesBtn"),
+  walletCurrency: document.getElementById("walletCurrency"),
+  walletAmount: document.getElementById("walletAmount"),
+  walletNotes: document.getElementById("walletNotes"),
+  saveWalletBalanceBtn: document.getElementById("saveWalletBalanceBtn"),
   operationType: document.getElementById("operationType"),
   currencyIn: document.getElementById("currencyIn"),
   amountIn: document.getElementById("amountIn"),
@@ -101,8 +105,10 @@ function initCurrencyOptions() {
 
   el.currencyIn.innerHTML = optionsHtml;
   el.currencyOut.innerHTML = optionsHtml;
+  el.walletCurrency.innerHTML = optionsHtml;
   el.currencyIn.value = "USD";
   el.currencyOut.value = "TRY";
+  el.walletCurrency.value = "USD";
 }
 
 function toNumber(value) {
@@ -161,6 +167,7 @@ function showStatus(message, isError) {
 function setButtonsDisabled(disabled) {
   [
     el.saveRatesBtn,
+    el.saveWalletBalanceBtn,
     el.saveOperationBtn,
     el.cancelEditBtn,
     el.previewBtn,
@@ -202,6 +209,23 @@ function getOperationFromForm() {
   return operation;
 }
 
+function getWalletBalanceOperationFromForm() {
+  const operation = {
+    type: "إضافة رصيد للمحفظة",
+    currency_in: el.walletCurrency.value,
+    amount_in: toPositiveNumber(el.walletAmount.value),
+    currency_out: el.walletCurrency.value,
+    amount_out: 0,
+    rate: 0
+  };
+
+  if (state.hasNotesColumn) {
+    operation.notes = el.walletNotes.value.trim();
+  }
+
+  return operation;
+}
+
 function clearOperationForm() {
   el.operationType.value = "صرف";
   el.currencyIn.value = "USD";
@@ -210,6 +234,12 @@ function clearOperationForm() {
   el.amountOut.value = "";
   el.rate.value = "";
   el.notes.value = "";
+}
+
+function clearWalletForm() {
+  el.walletCurrency.value = "USD";
+  el.walletAmount.value = "";
+  el.walletNotes.value = "";
 }
 
 function updateFormMode() {
@@ -551,6 +581,54 @@ async function saveOperation() {
   }
 }
 
+async function saveWalletBalance() {
+  if (!supabaseReady) {
+    showStatus("لا يمكن إضافة رصيد للمحفظة قبل إعداد Supabase.", true);
+    return;
+  }
+
+  const operation = getWalletBalanceOperationFromForm();
+
+  if (!operation.amount_in) {
+    showStatus("أدخل مبلغ الرصيد الذي تريد إضافته للمحفظة.", true);
+    return;
+  }
+
+  setButtonsDisabled(true);
+
+  try {
+    let response = await supabaseClient
+      .from("transactions")
+      .insert(operation)
+      .select(state.hasNotesColumn
+        ? "id, created_at, type, currency_in, amount_in, currency_out, amount_out, rate, notes"
+        : "id, created_at, type, currency_in, amount_in, currency_out, amount_out, rate")
+      .single();
+
+    if (response.error && state.hasNotesColumn && isMissingNotesColumnError(response.error)) {
+      state.hasNotesColumn = false;
+      return saveWalletBalance();
+    }
+
+    if (response.error) {
+      throw response.error;
+    }
+
+    if (!state.hasNotesColumn) {
+      response.data.notes = "";
+    }
+
+    state.operations.unshift(response.data);
+    clearWalletForm();
+    renderAll();
+    showStatus("تمت إضافة الرصيد للمحفظة وتحديث الأرصدة مباشرة.");
+  } catch (error) {
+    showStatus("تعذر إضافة رصيد للمحفظة: " + (error.message || error), true);
+  } finally {
+    setButtonsDisabled(false);
+  }
+}
+
 function startEditingOperation(id) {
   const operation = state.operations.find(function (item) {
     return String(item.id) === String(id);
@@ -688,6 +766,7 @@ function previewInfo() {
 
 function bindEvents() {
   el.saveRatesBtn.addEventListener("click", saveRates);
+  el.saveWalletBalanceBtn.addEventListener("click", saveWalletBalance);
   el.enableEstimatedStats.addEventListener("change", function (event) {
     state.enableEstimatedStats = Boolean(event.target.checked);
     renderStats();

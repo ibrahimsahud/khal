@@ -117,6 +117,34 @@
       <section class="panel">
         <div class="panel__head">
           <div>
+            <h2>إدارة أرصدة المحفظة</h2>
+            <p>أضف رصيدًا ابتدائيًا أو أي تعزيز جديد للمحفظة. سيتم تسجيله كحركة حقيقية ويظهر في الجدول.</p>
+          </div>
+        </div>
+
+        <div class="form-grid wallet-grid">
+          <div class="field">
+            <label for="walletCurrency">عملة الرصيد</label>
+            <select id="walletCurrency"></select>
+          </div>
+          <div class="field">
+            <label for="walletAmount">المبلغ المضاف</label>
+            <input id="walletAmount" type="number" inputmode="decimal" step="any" min="0" placeholder="0">
+          </div>
+          <div class="field field--full">
+            <label for="walletNotes">ملاحظات الرصيد</label>
+            <textarea id="walletNotes" placeholder="مثال: رصيد افتتاحي أو إضافة كاش للمحفظة"></textarea>
+          </div>
+        </div>
+
+        <div class="button-row">
+          <button class="btn btn--success" id="saveWalletBalanceBtn">إضافة رصيد للمحفظة</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel__head">
+          <div>
             <h2>جدول العمليات</h2>
           </div>
           <div class="meta" id="lastSync">آخر تحديث: -</div>
