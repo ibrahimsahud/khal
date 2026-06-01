@@ -39,11 +39,11 @@ const statsConfig = [
   { key: "balanceSypOld", label: "الموجود سوري قديم", className: "primary" },
   { key: "totalIn", label: "إجمالي الوارد", className: "success" },
   { key: "totalOut", label: "إجمالي الصادر", className: "danger" },
-  { key: "netUSD", label: "صافي بالدولار", className: "success" },
-  { key: "netTRY", label: "صافي بالتركي", className: "success" },
-  { key: "netSYP", label: "صافي بالسوري", className: "success" },
-  { key: "netTryCostUsd", label: "صافي كلفة التركي بالدولار", className: "primary" },
-  { key: "netSypCostUsd", label: "صافي كلفة السوري بالدولار", className: "primary" }
+  { key: "netUSD", label: "صافي بالدولار", className: "success", estimated: true },
+  { key: "netTRY", label: "صافي بالتركي", className: "success", estimated: true },
+  { key: "netSYP", label: "صافي بالسوري", className: "success", estimated: true },
+  { key: "netTryCostUsd", label: "صافي كلفة التركي بالدولار", className: "primary", estimated: true },
+  { key: "netSypCostUsd", label: "صافي كلفة السوري بالدولار", className: "primary", estimated: true }
 ];
 
 const supabaseReady =
@@ -57,6 +57,7 @@ const supabaseClient = supabaseReady
 
 const el = {
   statsGrid: document.getElementById("statsGrid"),
+  enableEstimatedStats: document.getElementById("enableEstimatedStats"),
   lastSync: document.getElementById("lastSync"),
   statusMessage: document.getElementById("statusMessage"),
   usdTry: document.getElementById("usdTry"),
@@ -87,7 +88,8 @@ const state = {
   },
   editingOperationId: null,
   hasNotesColumn: true,
-  rateRows: {}
+  rateRows: {},
+  enableEstimatedStats: false
 };
 
 let statusTimeout = null;
@@ -249,17 +251,27 @@ function computeSummary() {
     totalOut += amountOut;
   });
 
-  const usdTry = state.rates.usdTry;
-  const usdSypNew = state.rates.usdSypNew;
-  const usdSypOld = state.rates.usdSypOld;
+  let netUSD = null;
+  let netTRY = null;
+  let netSYP = null;
+  let netTryCostUsd = null;
+  let netSypCostUsd = null;
 
-  const tryCostUsd = usdTry ? balances.TRY / usdTry : 0;
-  const sypNewCostUsd = usdSypNew ? balances.SYP_NEW / usdSypNew : 0;
-  const sypOldCostUsd = usdSypOld ? balances.SYP_OLD / usdSypOld : 0;
+  if (state.enableEstimatedStats) {
+    const usdTry = state.rates.usdTry;
+    const usdSypNew = state.rates.usdSypNew;
+    const usdSypOld = state.rates.usdSypOld;
 
-  const netUSD = balances.USD + tryCostUsd + sypNewCostUsd + sypOldCostUsd;
-  const netTRY = netUSD * usdTry;
-  const netSYP = netUSD * usdSypNew;
+    const tryCostUsd = usdTry ? balances.TRY / usdTry : 0;
+    const sypNewCostUsd = usdSypNew ? balances.SYP_NEW / usdSypNew : 0;
+    const sypOldCostUsd = usdSypOld ? balances.SYP_OLD / usdSypOld : 0;
+
+    netUSD = balances.USD + tryCostUsd + sypNewCostUsd + sypOldCostUsd;
+    netTRY = netUSD * usdTry;
+    netSYP = netUSD * usdSypNew;
+    netTryCostUsd = tryCostUsd;
+    netSypCostUsd = sypNewCostUsd + sypOldCostUsd;
+  }
 
   return {
     balanceUSD: balances.USD,
@@ -271,18 +283,23 @@ function computeSummary() {
     netUSD: netUSD,
     netTRY: netTRY,
     netSYP: netSYP,
-    netTryCostUsd: tryCostUsd,
-    netSypCostUsd: sypNewCostUsd + sypOldCostUsd
+    netTryCostUsd: netTryCostUsd,
+    netSypCostUsd: netSypCostUsd
   };
 }
 
 function renderStats() {
   const summary = computeSummary();
   el.statsGrid.innerHTML = statsConfig.map(function (item) {
+    const value = summary[item.key];
+    const displayValue = item.estimated && !state.enableEstimatedStats
+      ? "—"
+      : formatNumber(value);
+
     return [
       '<article class="stat-card stat-card--' + item.className + '">',
       '<div class="stat-card__label">' + item.label + "</div>",
-      '<div class="stat-card__value">' + formatNumber(summary[item.key]) + "</div>",
+      '<div class="stat-card__value">' + displayValue + "</div>",
       "</article>"
     ].join("");
   }).join("");
@@ -671,6 +688,13 @@ function previewInfo() {
 
 function bindEvents() {
   el.saveRatesBtn.addEventListener("click", saveRates);
+  el.enableEstimatedStats.addEventListener("change", function (event) {
+    state.enableEstimatedStats = Boolean(event.target.checked);
+    renderStats();
+    showStatus(state.enableEstimatedStats
+      ? "تم تفعيل الحسابات التقديرية باستخدام أسعار الصرف."
+      : "تم إيقاف الحسابات التقديرية. الآن تظهر فقط القيم الفعلية المدخلة.");
+  });
   el.saveOperationBtn.addEventListener("click", saveOperation);
   el.cancelEditBtn.addEventListener("click", function () {
     resetEditMode();
