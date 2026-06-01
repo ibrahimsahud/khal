@@ -277,14 +277,14 @@ function renderOperationsTable() {
   el.operationsTableBody.innerHTML = state.operations.map(function (operation) {
     return [
       "<tr>",
-      "<td>" + escapeHtml(formatDate(operation.created_at)) + "</td>",
-      "<td>" + escapeHtml(operation.type) + "</td>",
-      "<td>" + escapeHtml(operation.currency_in) + "</td>",
-      "<td>" + escapeHtml(formatNumber(operation.amount_in)) + "</td>",
-      "<td>" + escapeHtml(operation.currency_out) + "</td>",
-      "<td>" + escapeHtml(formatNumber(operation.amount_out)) + "</td>",
-      "<td>" + escapeHtml(formatNumber(operation.rate)) + "</td>",
-      "<td>" + escapeHtml(operation.notes || "-") + "</td>",
+      '<td data-label="التاريخ">' + escapeHtml(formatDate(operation.created_at)) + "</td>",
+      '<td data-label="نوع العملية">' + escapeHtml(operation.type) + "</td>",
+      '<td data-label="العملة الداخلة">' + escapeHtml(operation.currency_in) + "</td>",
+      '<td data-label="المبلغ الداخل">' + escapeHtml(formatNumber(operation.amount_in)) + "</td>",
+      '<td data-label="العملة الخارجة">' + escapeHtml(operation.currency_out) + "</td>",
+      '<td data-label="المبلغ الخارج">' + escapeHtml(formatNumber(operation.amount_out)) + "</td>",
+      '<td data-label="سعر الصرف">' + escapeHtml(formatNumber(operation.rate)) + "</td>",
+      '<td data-label="الملاحظات">' + escapeHtml(operation.notes || "-") + "</td>",
       "</tr>"
     ].join("");
   }).join("");
