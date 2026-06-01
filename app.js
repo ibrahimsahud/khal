@@ -26,7 +26,11 @@ const SUPABASE_URL = "https://wpekmzymjwcngzfuwimm.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndwZWttenltandjbmd6ZnV3aW1tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMzMwMTIsImV4cCI6MjA5NTkwOTAxMn0.ejSXDYCLL_nvK1iuzdvbmJu-K0HMvD_wX3fnIrXlJN0";
 
 const CURRENCIES = ["USD", "TRY", "SYP_NEW", "SYP_OLD"];
-const RATES_ROW_ID = 1;
+const RATE_CURRENCY_MAP = {
+  usdTry: "TRY",
+  usdSypNew: "SYP_NEW",
+  usdSypOld: "SYP_OLD"
+};
 
 const statsConfig = [
   { key: "balanceUSD", label: "الموجود دولار", className: "primary" },
@@ -53,7 +57,6 @@ const supabaseClient = supabaseReady
 
 const el = {
   statsGrid: document.getElementById("statsGrid"),
-  connectionBadge: document.getElementById("connectionBadge"),
   lastSync: document.getElementById("lastSync"),
   statusMessage: document.getElementById("statusMessage"),
   usdTry: document.getElementById("usdTry"),
@@ -68,6 +71,7 @@ const el = {
   rate: document.getElementById("rate"),
   notes: document.getElementById("notes"),
   saveOperationBtn: document.getElementById("saveOperationBtn"),
+  cancelEditBtn: document.getElementById("cancelEditBtn"),
   previewBtn: document.getElementById("previewBtn"),
   refreshBtn: document.getElementById("refreshBtn"),
   exportBtn: document.getElementById("exportBtn"),
@@ -80,7 +84,10 @@ const state = {
     usdTry: 0,
     usdSypNew: 0,
     usdSypOld: 0
-  }
+  },
+  editingOperationId: null,
+  hasNotesColumn: true,
+  rateRows: {}
 };
 
 let statusTimeout = null;
@@ -149,14 +156,11 @@ function showStatus(message, isError) {
   }, 4500);
 }
 
-function updateConnectionBadge(text) {
-  el.connectionBadge.textContent = text;
-}
-
 function setButtonsDisabled(disabled) {
   [
     el.saveRatesBtn,
     el.saveOperationBtn,
+    el.cancelEditBtn,
     el.previewBtn,
     el.refreshBtn,
     el.exportBtn
@@ -180,15 +184,20 @@ function getRatesFromForm() {
 }
 
 function getOperationFromForm() {
-  return {
+  const operation = {
     type: el.operationType.value,
     currency_in: el.currencyIn.value,
     amount_in: toPositiveNumber(el.amountIn.value),
     currency_out: el.currencyOut.value,
     amount_out: toPositiveNumber(el.amountOut.value),
-    rate: toPositiveNumber(el.rate.value),
-    notes: el.notes.value.trim()
+    rate: toPositiveNumber(el.rate.value)
   };
+
+  if (state.hasNotesColumn) {
+    operation.notes = el.notes.value.trim();
+  }
+
+  return operation;
 }
 
 function clearOperationForm() {
@@ -199,6 +208,18 @@ function clearOperationForm() {
   el.amountOut.value = "";
   el.rate.value = "";
   el.notes.value = "";
+}
+
+function updateFormMode() {
+  const isEditing = state.editingOperationId !== null;
+  el.saveOperationBtn.textContent = isEditing ? "حفظ التعديلات" : "حفظ العملية";
+  el.cancelEditBtn.hidden = !isEditing;
+}
+
+function resetEditMode() {
+  state.editingOperationId = null;
+  clearOperationForm();
+  updateFormMode();
 }
 
 function computeSummary() {
@@ -270,7 +291,7 @@ function renderStats() {
 function renderOperationsTable() {
   if (!state.operations.length) {
     el.operationsTableBody.innerHTML =
-      '<tr><td colspan="8" class="empty-state">لا توجد عمليات محفوظة في قاعدة البيانات حتى الآن.</td></tr>';
+      '<tr><td colspan="9" class="empty-state">لا توجد عمليات محفوظة في قاعدة البيانات حتى الآن.</td></tr>';
     return;
   }
 
@@ -285,6 +306,10 @@ function renderOperationsTable() {
       '<td data-label="المبلغ الخارج">' + escapeHtml(formatNumber(operation.amount_out)) + "</td>",
       '<td data-label="سعر الصرف">' + escapeHtml(formatNumber(operation.rate)) + "</td>",
       '<td data-label="الملاحظات">' + escapeHtml(operation.notes || "-") + "</td>",
+      '<td data-label="الإجراءات"><div class="table-actions">' +
+        '<button type="button" class="table-btn table-btn--edit" data-action="edit" data-id="' + escapeHtml(operation.id) + '">تعديل</button>' +
+        '<button type="button" class="table-btn table-btn--delete" data-action="delete" data-id="' + escapeHtml(operation.id) + '">حذف</button>' +
+      "</div></td>",
       "</tr>"
     ].join("");
   }).join("");
@@ -297,73 +322,82 @@ function renderAll() {
   el.lastSync.textContent = "آخر تحديث: " + formatDate(new Date().toISOString());
 }
 
+function isMissingNotesColumnError(error) {
+  const message = String((error && error.message) || error || "").toLowerCase();
+  return message.includes("notes") && message.includes("column");
+}
+
 async function fetchRates() {
   const response = await supabaseClient
     .from("rates")
-    .select("id, usd_try, usd_syp_new, usd_syp_old")
-    .eq("id", RATES_ROW_ID)
-    .maybeSingle();
+    .select("id, currency, rate_to_usd, updated_at");
 
   if (response.error) {
     throw response.error;
   }
 
-  if (!response.data) {
-    const seed = await supabaseClient.from("rates").upsert({
-      id: RATES_ROW_ID,
-      usd_try: 0,
-      usd_syp_new: 0,
-      usd_syp_old: 0
-    }).select("id, usd_try, usd_syp_new, usd_syp_old").single();
+  const rows = Array.isArray(response.data) ? response.data : [];
+  state.rateRows = {};
 
-    if (seed.error) {
-      throw seed.error;
+  rows.forEach(function (row) {
+    if (row && row.currency) {
+      state.rateRows[row.currency] = row;
     }
-
-    response.data = seed.data;
-  }
+  });
 
   state.rates = {
-    usdTry: toPositiveNumber(response.data.usd_try),
-    usdSypNew: toPositiveNumber(response.data.usd_syp_new),
-    usdSypOld: toPositiveNumber(response.data.usd_syp_old)
+    usdTry: toPositiveNumber(state.rateRows.TRY && state.rateRows.TRY.rate_to_usd),
+    usdSypNew: toPositiveNumber(state.rateRows.SYP_NEW && state.rateRows.SYP_NEW.rate_to_usd),
+    usdSypOld: toPositiveNumber(state.rateRows.SYP_OLD && state.rateRows.SYP_OLD.rate_to_usd)
   };
 }
 
 async function fetchTransactions() {
-  const response = await supabaseClient
+  let response = await supabaseClient
     .from("transactions")
     .select("id, created_at, type, currency_in, amount_in, currency_out, amount_out, rate, notes")
     .order("created_at", { ascending: false });
+
+  if (response.error && isMissingNotesColumnError(response.error)) {
+    state.hasNotesColumn = false;
+    response = await supabaseClient
+      .from("transactions")
+      .select("id, created_at, type, currency_in, amount_in, currency_out, amount_out, rate")
+      .order("created_at", { ascending: false });
+  }
 
   if (response.error) {
     throw response.error;
   }
 
-  state.operations = Array.isArray(response.data) ? response.data : [];
+  state.operations = Array.isArray(response.data) ? response.data.map(function (item) {
+    if (!state.hasNotesColumn) {
+      return Object.assign({ notes: "" }, item);
+    }
+    return item;
+  }) : [];
 }
 
 async function loadDashboardData(showMessage) {
   if (!supabaseReady) {
-    updateConnectionBadge("أدخل مفاتيح Supabase");
     showStatus("عدّل SUPABASE_URL و SUPABASE_ANON_KEY داخل app.js أولاً.", true);
     renderStats();
     renderOperationsTable();
     return;
   }
 
-  updateConnectionBadge("جاري المزامنة...");
   setButtonsDisabled(true);
 
   try {
     await Promise.all([fetchRates(), fetchTransactions()]);
     renderAll();
-    updateConnectionBadge("متصل بقاعدة البيانات");
     if (showMessage) {
       showStatus("تم تحديث البيانات من Supabase.");
     }
+    if (!state.hasNotesColumn) {
+      showStatus("تم تحميل البيانات. ملاحظة: عمود notes غير موجود حالياً في Supabase لذلك تم تعطيل حفظ الملاحظات.", true);
+    }
   } catch (error) {
-    updateConnectionBadge("فشل الاتصال");
     showStatus("تعذر جلب البيانات من Supabase: " + (error.message || error), true);
   } finally {
     setButtonsDisabled(false);
@@ -380,18 +414,41 @@ async function saveRates() {
   setButtonsDisabled(true);
 
   try {
-    const response = await supabaseClient.from("rates").upsert({
-      id: RATES_ROW_ID,
-      usd_try: rates.usdTry,
-      usd_syp_new: rates.usdSypNew,
-      usd_syp_old: rates.usdSypOld
-    });
+    const rateEntries = [
+      { currency: RATE_CURRENCY_MAP.usdTry, value: rates.usdTry },
+      { currency: RATE_CURRENCY_MAP.usdSypNew, value: rates.usdSypNew },
+      { currency: RATE_CURRENCY_MAP.usdSypOld, value: rates.usdSypOld }
+    ];
 
-    if (response.error) {
-      throw response.error;
+    for (let i = 0; i < rateEntries.length; i += 1) {
+      const entry = rateEntries[i];
+      const existingRow = state.rateRows[entry.currency];
+
+      if (existingRow && existingRow.id) {
+        const updateResponse = await supabaseClient
+          .from("rates")
+          .update({ rate_to_usd: entry.value, updated_at: new Date().toISOString() })
+          .eq("id", existingRow.id);
+
+        if (updateResponse.error) {
+          throw updateResponse.error;
+        }
+      } else {
+        const insertResponse = await supabaseClient
+          .from("rates")
+          .insert({
+            currency: entry.currency,
+            rate_to_usd: entry.value,
+            updated_at: new Date().toISOString()
+          });
+
+        if (insertResponse.error) {
+          throw insertResponse.error;
+        }
+      }
     }
 
-    state.rates = rates;
+    await fetchRates();
     renderAll();
     showStatus("تم تحديث أسعار الصرف بنجاح.");
   } catch (error) {
@@ -422,24 +479,140 @@ async function saveOperation() {
   setButtonsDisabled(true);
 
   try {
-    const response = await supabaseClient
-      .from("transactions")
-      .insert(operation)
-      .select("id, created_at, type, currency_in, amount_in, currency_out, amount_out, rate, notes")
-      .single();
+    let response;
+    const isEditing = state.editingOperationId !== null;
+
+    if (isEditing) {
+      response = await supabaseClient
+        .from("transactions")
+        .update(operation)
+        .eq("id", state.editingOperationId)
+        .select(state.hasNotesColumn
+          ? "id, created_at, type, currency_in, amount_in, currency_out, amount_out, rate, notes"
+          : "id, created_at, type, currency_in, amount_in, currency_out, amount_out, rate")
+        .single();
+    } else {
+      response = await supabaseClient
+        .from("transactions")
+        .insert(operation)
+        .select(state.hasNotesColumn
+          ? "id, created_at, type, currency_in, amount_in, currency_out, amount_out, rate, notes"
+          : "id, created_at, type, currency_in, amount_in, currency_out, amount_out, rate")
+        .single();
+    }
+
+    if (response.error && state.hasNotesColumn && isMissingNotesColumnError(response.error)) {
+      state.hasNotesColumn = false;
+      return saveOperation();
+    }
 
     if (response.error) {
       throw response.error;
     }
 
-    state.operations.unshift(response.data);
-    clearOperationForm();
+    if (!state.hasNotesColumn) {
+      response.data.notes = "";
+    }
+
+    if (isEditing) {
+      state.operations = state.operations.map(function (item) {
+        return item.id === response.data.id ? response.data : item;
+      });
+    } else {
+      state.operations.unshift(response.data);
+    }
+
+    resetEditMode();
     renderAll();
-    showStatus("تم حفظ العملية وتحديث الجدول والإحصائيات مباشرة.");
+    showStatus(isEditing
+      ? "تم تعديل العملية وتحديث الجدول والإحصائيات مباشرة."
+      : "تم حفظ العملية وتحديث الجدول والإحصائيات مباشرة.");
   } catch (error) {
     showStatus("تعذر حفظ العملية: " + (error.message || error), true);
   } finally {
     setButtonsDisabled(false);
+  }
+}
+
+function startEditingOperation(id) {
+  const operation = state.operations.find(function (item) {
+    return String(item.id) === String(id);
+  });
+
+  if (!operation) {
+    showStatus("لم يتم العثور على العملية المطلوبة للتعديل.", true);
+    return;
+  }
+
+  state.editingOperationId = operation.id;
+  el.operationType.value = operation.type;
+  el.currencyIn.value = operation.currency_in;
+  el.amountIn.value = operation.amount_in || "";
+  el.currencyOut.value = operation.currency_out;
+  el.amountOut.value = operation.amount_out || "";
+  el.rate.value = operation.rate || "";
+  el.notes.value = operation.notes || "";
+  updateFormMode();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  showStatus("تم تحميل العملية داخل النموذج. يمكنك الآن تعديلها ثم حفظ التغييرات.");
+}
+
+async function deleteOperation(id) {
+  if (!supabaseReady) {
+    showStatus("لا يمكن حذف العملية قبل إعداد Supabase.", true);
+    return;
+  }
+
+  const confirmed = window.confirm("هل أنت متأكد من حذف هذه العملية؟");
+  if (!confirmed) {
+    return;
+  }
+
+  setButtonsDisabled(true);
+
+  try {
+    const response = await supabaseClient
+      .from("transactions")
+      .delete()
+      .eq("id", id);
+
+    if (response.error) {
+      throw response.error;
+    }
+
+    state.operations = state.operations.filter(function (item) {
+      return String(item.id) !== String(id);
+    });
+
+    if (String(state.editingOperationId) === String(id)) {
+      resetEditMode();
+    }
+
+    renderAll();
+    showStatus("تم حذف العملية بنجاح.");
+  } catch (error) {
+    showStatus("تعذر حذف العملية: " + (error.message || error), true);
+  } finally {
+    setButtonsDisabled(false);
+  }
+}
+
+function handleTableActions(event) {
+  const button = event.target.closest("[data-action]");
+  if (!button) {
+    return;
+  }
+
+  const action = button.getAttribute("data-action");
+  const id = button.getAttribute("data-id");
+
+  if (action === "edit") {
+    startEditingOperation(id);
+    return;
+  }
+
+  if (action === "delete") {
+    deleteOperation(id);
   }
 }
 
@@ -499,15 +672,21 @@ function previewInfo() {
 function bindEvents() {
   el.saveRatesBtn.addEventListener("click", saveRates);
   el.saveOperationBtn.addEventListener("click", saveOperation);
+  el.cancelEditBtn.addEventListener("click", function () {
+    resetEditMode();
+    showStatus("تم إلغاء وضع التعديل.");
+  });
   el.previewBtn.addEventListener("click", previewInfo);
   el.refreshBtn.addEventListener("click", function () {
     loadDashboardData(true);
   });
   el.exportBtn.addEventListener("click", exportCsv);
+  el.operationsTableBody.addEventListener("click", handleTableActions);
 }
 
 function init() {
   initCurrencyOptions();
+  updateFormMode();
   renderStats();
   bindEvents();
   loadDashboardData(false);

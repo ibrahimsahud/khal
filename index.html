@@ -10,12 +10,8 @@
   <div class="page-shell">
     <header class="hero">
       <div class="hero__content">
+        <h1 class="hero__title">STEP</h1>
         <h1>لوحة إدارة عمليات محل الصرافة خاص لاحمد بكور</h1>
-        </p>
-      </div>
-      <div class="hero__badge">
-        <span>الحالة</span>
-        <strong id="connectionBadge">جاري الاتصال...</strong>
       </div>
     </header>
 
@@ -103,6 +99,7 @@
 
           <div class="button-row">
             <button class="btn btn--success" id="saveOperationBtn">حفظ العملية</button>
+            <button class="btn btn--danger" id="cancelEditBtn" hidden>إلغاء التعديل</button>
             <button class="btn btn--ghost" id="previewBtn">معاينة المعلومات</button>
             <button class="btn btn--primary" id="refreshBtn">تحديث البيانات</button>
             <button class="btn btn--dark" id="exportBtn">تصدير CSV</button>
@@ -132,11 +129,12 @@
                 <th>المبلغ الخارج</th>
                 <th>سعر الصرف</th>
                 <th>الملاحظات</th>
+                <th>الإجراءات</th>
               </tr>
             </thead>
             <tbody id="operationsTableBody">
               <tr>
-                <td colspan="8" class="empty-state">جاري تحميل البيانات...</td>
+                <td colspan="9" class="empty-state">جاري تحميل البيانات...</td>
               </tr>
             </tbody>
           </table>

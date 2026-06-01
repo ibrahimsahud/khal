@@ -57,7 +57,7 @@ button {
 
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
   align-items: end;
   padding: 28px;
@@ -93,26 +93,6 @@ button {
   max-width: 760px;
   font-size: 1.05rem;
   color: var(--muted);
-}
-
-.hero__badge {
-  min-width: 220px;
-  padding: 18px;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.84);
-  border: 1px solid rgba(191, 219, 254, 0.9);
-  text-align: right;
-}
-
-.hero__badge span {
-  display: block;
-  color: var(--muted);
-  margin-bottom: 6px;
-}
-
-.hero__badge strong {
-  font-size: 1.05rem;
-  color: var(--primary-dark);
 }
 
 .dashboard {
@@ -280,6 +260,10 @@ button {
   background: linear-gradient(135deg, #16a34a, #15803d);
 }
 
+.btn--danger {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+}
+
 .btn--dark {
   background: linear-gradient(135deg, #334155, #0f172a);
 }
@@ -335,6 +319,31 @@ tr:last-child td {
   border-bottom: 0;
 }
 
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.table-btn {
+  border: 0;
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.table-btn--edit {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+}
+
+.table-btn--delete {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+}
+
 .empty-state {
   text-align: center;
   color: var(--muted);
@@ -375,10 +384,6 @@ code {
 
   .hero {
     gap: 12px;
-  }
-
-  .hero__badge {
-    min-width: 0;
   }
 
   .hero h1 {
@@ -466,6 +471,15 @@ code {
     flex: 0 0 42%;
   }
 
+  .table-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .table-btn {
+    flex: 1 1 120px;
+  }
+
   td:last-child {
     border-bottom: 0;
   }
@@ -490,8 +504,7 @@ code {
   }
 
   .stat-card,
-  .panel,
-  .hero__badge {
+  .panel {
     border-radius: 18px;
   }
 }
